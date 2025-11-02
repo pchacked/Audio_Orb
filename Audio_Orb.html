@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Visualizing Orb</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0a2e 50%, #0a0a0a 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            color: white;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .controls {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00f5ff 0%, #a855f7 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 14px 32px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #00f5ff 0%, #a855f7 100%);
+            color: white;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(0, 245, 255, 0.3);
+        }
+
+        .file-input-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .play-button {
+            padding: 14px 40px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+            color: white;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+            display: none;
+        }
+
+        .play-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+        }
+
+        .play-button.visible {
+            display: inline-block;
+        }
+
+        .info {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            max-width: 300px;
+        }
+
+        .file-name {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: none;
+        }
+
+        .file-name.visible {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <h1>Audio Visualizing Orb</h1>
+        <p class="info">Upload an audio file to see the orb come alive with your music</p>
+        
+        <div class="file-input-wrapper">
+            <input type="file" id="audioFile" accept="audio/*">
+            <label for="audioFile" class="file-input-label">Choose Audio File</label>
+        </div>
+        
+        <div class="file-name" id="fileName"></div>
+        <button class="play-button" id="playButton">Play</button>
+    </div>
+
+    <audio id="audio" style="display: none;"></audio>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const audio = document.getElementById('audio');
+        const fileInput = document.getElementById('audioFile');
+        const playButton = document.getElementById('playButton');
+        const fileNameDisplay = document.getElementById('fileName');
+
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let bufferLength;
+        let isPlaying = false;
+        let smoothedAvgFrequency = 0;
+        let smoothedBassBoost = 0;
+
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Particle class removed - no longer needed
+
+        // Create particles removed - no longer needed
+
+        // File input handler
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                audio.src = url;
+                fileNameDisplay.textContent = file.name;
+                fileNameDisplay.classList.add('visible');
+                playButton.classList.add('visible');
+                playButton.textContent = 'Play';
+                isPlaying = false;
+                
+                if (!audioContext) {
+                    setupAudioContext();
+                }
+            }
+        });
+
+        // Setup audio context
+        function setupAudioContext() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            
+            const source = audioContext.createMediaElementSource(audio);
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+        }
+
+        // Play/Pause button
+        playButton.addEventListener('click', function() {
+            if (isPlaying) {
+                audio.pause();
+                playButton.textContent = 'Play';
+                isPlaying = false;
+            } else {
+                audio.play();
+                playButton.textContent = 'Pause';
+                isPlaying = true;
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+            }
+        });
+
+        // Audio ended event
+        audio.addEventListener('ended', function() {
+            playButton.textContent = 'Play';
+            isPlaying = false;
+        });
+
+        // Animation
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+
+            // Clear canvas with fade effect
+            ctx.fillStyle = 'rgba(10, 10, 26, 0.15)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            // Get audio data with smoothing
+            if (analyser && isPlaying) {
+                analyser.getByteFrequencyData(dataArray);
+                const rawAvgFrequency = dataArray.reduce((a, b) => a + b) / bufferLength / 255;
+                const rawBassBoost = (dataArray[0] + dataArray[1] + dataArray[2]) / 3 / 255;
+                
+                // Smooth the values for fluid animation
+                smoothedAvgFrequency += (rawAvgFrequency - smoothedAvgFrequency) * 0.15;
+                smoothedBassBoost += (rawBassBoost - smoothedBassBoost) * 0.15;
+            } else {
+                // Gradually fade to zero when not playing
+                smoothedAvgFrequency *= 0.95;
+                smoothedBassBoost *= 0.95;
+            }
+
+            // Base orb size with smooth audio reactivity and organic variation
+            const baseSize = 300;
+            const orbSize = baseSize + smoothedAvgFrequency * 180 + Math.sin(time * 2) * 10;
+
+            // Draw liquid orb with blob-like shape
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            
+            // Create organic blob shape with subtle variation
+            ctx.beginPath();
+            const segments = 32;
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const variation = Math.sin(angle * 3 + time * 2) * 0.04 + Math.cos(angle * 5 - time * 1.5) * 0.03;
+                const radius = orbSize * (1 + variation + smoothedAvgFrequency * 0.1);
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+
+            // Create liquid gradient
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, orbSize * 1.5);
+            const hue = (time * 50) % 360;
+            gradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 1)`);
+            gradient.addColorStop(0.4, `hsla(${(hue + 40) % 360}, 100%, 65%, 0.9)`);
+            gradient.addColorStop(0.7, `hsla(${(hue + 80) % 360}, 100%, 50%, 0.6)`);
+            gradient.addColorStop(1, `hsla(${(hue + 120) % 360}, 100%, 40%, 0)`);
+
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Add inner glow for liquid effect
+            ctx.shadowBlur = 40 + smoothedAvgFrequency * 60;
+            ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.8)`;
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        animate();
+    </script>
+</body>
+</html>
